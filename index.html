@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e4fa8">
+<title>在席退席と外の天気</title>
+<style>
+  :root {
+    --primary: #1e4fa8;
+    --primary-dark: #173f88;
+    --text: #222;
+    --muted: #555;
+    --line: #8a8a8a;
+    --bg: #f5f5f5;
+    --footer: #ebebeb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ヘッダー */
+  header {
+    background: var(--primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .icon-btn { background: none; border: 0; color: inherit; padding: 4px; cursor: pointer; display: flex; }
+  .brand { font-size: 24px; letter-spacing: .5px; flex: 1; }
+  .user-box { text-align: right; font-size: 14px; line-height: 1.4; min-width: 0; }
+  .user-box .email { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  .status { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .status .dot { width: 12px; height: 12px; border-radius: 50%; background: #6cc24a; border: 1px solid #fff; }
+
+  /* 本体 */
+  main { flex: 1; width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 24px 40px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  h1 { font-size: 17px; font-weight: 500; text-align: center; margin: 24px 0 20px; }
+
+  .field { display: grid; grid-template-columns: 84px 1fr; align-items: end; gap: 12px; margin-bottom: 18px; }
+  .field label { text-align: right; font-size: 15px; padding-bottom: 6px; }
+  .field input, .field .value {
+    font: inherit; font-size: 15px; color: var(--text);
+    border: 0; border-bottom: 1px solid var(--line);
+    background: transparent; padding: 6px 0; width: 100%; min-width: 0;
+    border-radius: 0; outline: none;
+  }
+  .field input:focus { border-bottom: 2px solid var(--primary); padding-bottom: 5px; }
+  .field .value { word-break: break-all; }
+
+  .actions { margin-top: 40px; display: grid; gap: 14px; }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font: inherit; font-size: 18px; height: 56px; border-radius: 4px; cursor: pointer;
+    border: 2px solid var(--primary); transition: background .15s, transform .05s;
+  }
+  .btn:active { transform: scale(.99); }
+  .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-outline { background: #fff; color: var(--primary); }
+  .btn-outline:hover { background: #eef3fc; }
+
+  .place-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 18px; font-size: 14px; color: var(--muted); }
+  .place-row select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid #c8d3e6; border-radius: 8px; background: #fff; color: var(--text); }
+
+  /* 完了画面 */
+  .done { text-align: center; padding-top: 8px; }
+  .done h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .done .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .summary { background: #fff; border-radius: 6px; padding: 16px 20px; text-align: left; font-size: 14px; margin: 20px 0 24px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .summary dl { display: grid; grid-template-columns: 84px 1fr; gap: 10px 12px; margin: 0; }
+  .summary dt { color: var(--muted); }
+  .summary dd { margin: 0; word-break: break-all; }
+
+  /* 天気カード */
+  .wx { border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.12); text-align: left; }
+  .scene { position: relative; color: #fff; padding: 16px 18px 18px; min-height: 150px; overflow: hidden; transition: background .6s; }
+  .scene::before, .scene::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+  .scene > * { position: relative; z-index: 1; }
+  .scene.clear.day   { background: linear-gradient(160deg, #3d8ef0, #8fd0ff); }
+  .scene.clear.night { background: linear-gradient(160deg, #0f1b3d, #2c3e75); }
+  .scene.partly.day  { background: linear-gradient(160deg, #5b9be0, #bcd8f2); }
+  .scene.partly.night{ background: linear-gradient(160deg, #1b2850, #46577f); }
+  .scene.cloudy      { background: linear-gradient(160deg, #7b8aa0, #b9c3cf); }
+  .scene.fog         { background: linear-gradient(160deg, #8e99a6, #cfd5dc); }
+  .scene.rain        { background: linear-gradient(160deg, #3f5068, #7a8ca2); }
+  .scene.snow        { background: linear-gradient(160deg, #8ea6bf, #dfe8f2); }
+  .scene.thunder     { background: linear-gradient(160deg, #23263f, #555874); }
+  .scene.night.clear::before, .scene.night.partly::before { background: radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1.5px 1.5px at 70% 20%, #fff, transparent), radial-gradient(1px 1px at 45% 60%, #fff, transparent), radial-gradient(1px 1px at 85% 70%, #fff, transparent), radial-gradient(1.5px 1.5px at 10% 80%, #fff, transparent); animation: twinkle 3s ease-in-out infinite; }
+  @keyframes twinkle { 50% { opacity: .4; } }
+  .scene.rain::after, .scene.thunder::after { background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(255,255,255,.28) 14px 15px, transparent 15px 28px); background-size: 200% 200%; animation: rain .5s linear infinite; }
+  @keyframes rain { from { background-position: 0 0; } to { background-position: -10px 60px; } }
+  .scene.thunder::before { background: #fff; opacity: 0; animation: flash 5s infinite; }
+  @keyframes flash { 0%, 90%, 94%, 100% { opacity: 0; } 92% { opacity: .5; } }
+  .scene.snow::after { background-image: radial-gradient(3px 3px at 10% 10%, #fff, transparent), radial-gradient(2px 2px at 40% 30%, #fff, transparent), radial-gradient(3px 3px at 70% 5%, #fff, transparent), radial-gradient(2px 2px at 85% 40%, #fff, transparent), radial-gradient(3px 3px at 25% 60%, #fff, transparent), radial-gradient(2px 2px at 60% 75%, #fff, transparent); background-size: 100% 100%; animation: snow 4s linear infinite; }
+  @keyframes snow { from { transform: translateY(-40%); } to { transform: translateY(40%); } }
+  .scene .top { display: flex; justify-content: space-between; align-items: flex-start; font-size: 13px; }
+  .scene .place { font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .scene .demo { background: #fff; color: #c0392b; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+  .scene .main { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .scene .temp { font-size: 56px; font-weight: 800; line-height: 1; text-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  .scene .temp small { font-size: 22px; font-weight: 700; }
+  .scene .cond { font-size: 16px; font-weight: 700; margin-top: 4px; }
+  .scene .meta { font-size: 12px; opacity: .92; margin-top: 2px; }
+  .scene .icon { width: 104px; height: 104px; filter: drop-shadow(0 4px 8px rgba(0,0,0,.2)); }
+  .scene .icon.clear-day { animation: rotate 30s linear infinite; }
+  .scene .icon.float { animation: float 4s ease-in-out infinite; }
+  @keyframes rotate { to { transform: rotate(360deg); } }
+  @keyframes float { 50% { transform: translateX(6px); } }
+  .forecast { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #eef0f3; }
+  .forecast > div { padding: 12px 14px; display: grid; grid-template-columns: 40px 1fr; gap: 0 8px; align-items: center; }
+  .forecast > div + div { border-left: 1px solid #eef0f3; }
+  .forecast img { width: 40px; grid-row: span 2; }
+  .forecast .label { font-size: 12px; color: var(--muted); }
+  .forecast .val { font-size: 15px; font-weight: 700; }
+  .forecast .val span { font-size: 12px; color: #2e86de; font-weight: 700; margin-left: 4px; }
+  .advice { padding: 6px 14px 4px; }
+  .advice div { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; font-size: 14px; line-height: 1.5; }
+  .advice div + div { border-top: 1px dashed #e3e7ee; }
+  .advice .ico { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .advice b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .wx .foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px 12px; font-size: 11px; color: #999; }
+  .wx .foot a { color: #999; }
+  .wx-loading { padding: 40px 0; text-align: center; color: var(--muted); font-size: 13px; }
+  .wx-loading img { width: 56px; animation: float 1.2s ease-in-out infinite; display: block; margin: 0 auto 8px; }
+  /* フッター */
+  footer { background: var(--footer); padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); font-size: 14px; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 8px 0; }
+  footer nav a { color: var(--primary); text-decoration: none; padding: 0 12px; border-left: 1px solid #999; }
+  footer nav a:first-child { border-left: 0; padding-left: 0; }
+  footer .copy { color: #888; text-align: center; margin-top: 16px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <button class="icon-btn" aria-label="メニュー">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </button>
+    <div class="brand">SEATouch</div>
+    <div class="user-box">
+      <div class="email" id="headerUser"></div>
+      <div class="status">
+        <span class="dot"></span>テレワーク
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 入力画面 -->
+    <section class="screen active" id="screen-form">
+      <h1>在席退席登録</h1>
+      <div class="field">
+        <label for="card">カード番号</label>
+        <input id="card" type="text" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>ユーザーID</label>
+        <div class="value" id="userId"></div>
+      </div>
+      <div class="field">
+        <label for="comment">コメント</label>
+        <input id="comment" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="datetime">日時</label>
+        <input id="datetime" type="datetime-local">
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnIn">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7 9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-8v2h8v14z"/></svg>
+          在席登録
+        </button>
+        <button class="btn btn-outline" id="btnOut">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="m17 7-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8v-2H4V5z"/></svg>
+          退席登録
+        </button>
+      </div>
+      <label class="place-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+        天気の地域
+        <select id="placeSelect"></select>
+      </label>
+    </section>
+
+    <!-- 完了画面 -->
+    <section class="screen" id="screen-done">
+      <div class="done">
+        <h2 id="doneTitle">在席登録が完了しました</h2>
+        <p class="sub" id="doneSub"></p>
+        <div class="wx" id="wx"></div>
+        <div class="summary">
+          <dl>
+            <dt>ユーザーID</dt><dd id="sumUser"></dd>
+            <dt>日時</dt><dd id="sumTime"></dd>
+            <dt>コメント</dt><dd id="sumComment"></dd>
+          </dl>
+        </div>
+        <button class="btn btn-outline" id="btnBack" style="width:100%">戻る</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <nav>
+      <a href="#">利用規約</a>
+      <a href="#">プライバシーポリシー</a>
+      <a href="#">ウェブアクセシビリティ</a>
+    </nav>
+    <div class="copy">Prototype — 実際の登録は行われません</div>
+  </footer>
+
+<script>
+  const USER_ID = 'taro.yamada@example.com';
+  const PLACE_KEY = 'weather-place-v1';
+  const PLACES = [
+    { id: 'tokyo',     name: '東京（丸の内）', lat: 35.681, lon: 139.767 },
+    { id: 'shinagawa', name: '品川',           lat: 35.628, lon: 139.739 },
+    { id: 'yokohama',  name: '横浜',           lat: 35.466, lon: 139.622 },
+    { id: 'atsugi',    name: '厚木',           lat: 35.441, lon: 139.365 },
+    { id: 'nagoya',    name: '名古屋',         lat: 35.171, lon: 136.882 },
+    { id: 'osaka',     name: '大阪',           lat: 34.702, lon: 135.496 },
+    { id: 'fukuoka',   name: '福岡',           lat: 33.590, lon: 130.420 },
+    { id: 'sendai',    name: '仙台',           lat: 38.260, lon: 140.882 },
+    { id: 'sapporo',   name: '札幌',           lat: 43.069, lon: 141.351 },
+    { id: 'here',      name: '現在地' },
+  ];
+  const $ = (id) => document.getElementById(id);
+
+  $('headerUser').textContent = USER_ID;
+  $('userId').textContent = USER_ID;
+
+  function nowLocal() {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+  $('datetime').value = nowLocal();
+
+  // 地域の選択（このブラウザ内にだけ保存）
+  let placeId = 'tokyo';
+  try { placeId = localStorage.getItem(PLACE_KEY) || 'tokyo'; } catch {}
+  $('placeSelect').innerHTML = PLACES.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  $('placeSelect').value = placeId;
+  $('placeSelect').addEventListener('change', (e) => {
+    placeId = e.target.value;
+    try { localStorage.setItem(PLACE_KEY, placeId); } catch {}
+  });
+
+  function getPosition() {
+    const p = PLACES.find(x => x.id === placeId) || PLACES[0];
+    if (p.id !== 'here') return Promise.resolve(p);
+    return new Promise(resolve => {
+      if (!navigator.geolocation) return resolve({ ...PLACES[0], name: `${PLACES[0].name}（現在地を取得できませんでした）` });
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ name: '現在地', lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => resolve({ ...PLACES[0], name: `${PLACES[0].name}（現在地を取得できませんでした）` }),
+        { timeout: 8000, maximumAge: 600000 });
+    });
+  }
+
+  // ---- 天気の取得（Open-Meteo）。失敗したらデモデータ ----
+  async function fetchWeather(place) {
+    const url = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
+      latitude: place.lat, longitude: place.lon, timezone: 'Asia/Tokyo', forecast_days: 2,
+      current: 'temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m',
+      hourly: 'temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day',
+      daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    });
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status);
+      return { ...(await res.json()), demo: false };
+    } catch {
+      return demoWeather();
+    }
+  }
+  function demoWeather() {
+    const today = nowLocal().slice(0, 10);
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    const tomorrow = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const time = [], temperature_2m = [], apparent_temperature = [], precipitation_probability = [], weather_code = [], is_day = [];
+    [today, tomorrow].forEach(day => { for (let h = 0; h < 24; h++) {
+      time.push(`${day}T${String(h).padStart(2, '0')}:00`);
+      const t = 16 + 6 * Math.sin((h - 9) / 24 * Math.PI * 2);
+      temperature_2m.push(+t.toFixed(1)); apparent_temperature.push(+(t - 1.5).toFixed(1));
+      precipitation_probability.push(h >= 17 && h <= 22 ? 60 : 10);
+      weather_code.push(h >= 17 && h <= 22 ? 61 : h < 12 ? 1 : 3);
+      is_day.push(h >= 6 && h < 18 ? 1 : 0);
+    } });
+    const h = new Date().getHours();
+    return {
+      demo: true,
+      current: { temperature_2m: temperature_2m[h], apparent_temperature: apparent_temperature[h], weather_code: weather_code[h], is_day: is_day[h], wind_speed_10m: 8 },
+      hourly: { time, temperature_2m, apparent_temperature, precipitation_probability, weather_code, is_day },
+      daily: { temperature_2m_max: [22, 21], temperature_2m_min: [10, 11], precipitation_probability_max: [60, 20] },
+    };
+  }
+
+  // WMO 天気コード → 表示
+  function describe(code, isDay) {
+    const dn = isDay ? 'day' : 'night';
+    if (code === 0) return { label: '快晴', type: 'clear', icon: `clear-${dn}` };
+    if (code === 1) return { label: '晴れ', type: 'clear', icon: `clear-${dn}` };
+    if (code === 2) return { label: '晴れ時々くもり', type: 'partly', icon: `partly-${dn}` };
+    if (code === 3) return { label: 'くもり', type: 'cloudy', icon: 'cloudy' };
+    if (code === 45 || code === 48) return { label: '霧', type: 'fog', icon: 'fog' };
+    if (code >= 51 && code <= 57) return { label: '霧雨', type: 'rain', icon: 'rain' };
+    if (code >= 61 && code <= 67) return { label: code >= 65 ? '強い雨' : '雨', type: 'rain', icon: 'rain' };
+    if (code >= 71 && code <= 77) return { label: '雪', type: 'snow', icon: 'snow' };
+    if (code >= 80 && code <= 82) return { label: 'にわか雨', type: 'rain', icon: 'rain' };
+    if (code === 85 || code === 86) return { label: 'にわか雪', type: 'snow', icon: 'snow' };
+    if (code >= 95) return { label: '雷雨', type: 'thunder', icon: 'thunder' };
+    return { label: 'くもり', type: 'cloudy', icon: 'cloudy' };
+  }
+  const iconSrc = (name) => `assets/weather/${name}.svg`;
+
+  function clothing(t) {
+    if (t >= 28) return '半袖でOK。暑さ対策と水分補給を忘れずに';
+    if (t >= 23) return '半袖か薄手の長袖がちょうどいい気温です';
+    if (t >= 18) return '長袖シャツに、薄手の羽織があると安心';
+    if (t >= 13) return 'カーディガンや軽めのジャケットを';
+    if (t >= 8)  return 'コートが必要な寒さです';
+    return '厚手のコートにマフラーや手袋も';
+  }
+  function umbrella(p) {
+    if (p >= 50) return { text: `降水確率${p}%。傘を持っていきましょう`, icon: '☔', bg: '#eaf2fb' };
+    if (p >= 30) return { text: `降水確率${p}%。折りたたみ傘があると安心`, icon: '🌂', bg: '#f4f0fb' };
+    return { text: `降水確率${p}%。傘はいらなさそうです`, icon: '☀️', bg: '#fff8e1' };
+  }
+
+  // 指定日時（今日/明日の何時）の 1時間ごとデータ
+  function hourAt(w, dayOffset, hour) {
+    const d = new Date(); d.setDate(d.getDate() + dayOffset);
+    const day = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const i = w.hourly.time.indexOf(`${day}T${String(hour).padStart(2, '0')}:00`);
+    return i < 0 ? null : {
+      temp: Math.round(w.hourly.temperature_2m[i]), feels: w.hourly.apparent_temperature[i],
+      pop: w.hourly.precipitation_probability[i] ?? 0, d: describe(w.hourly.weather_code[i], w.hourly.is_day[i]),
+    };
+  }
+  // 今から n 時間の最大降水確率
+  function maxPop(w, hours) {
+    const now = nowLocal().slice(0, 13) + ':00';
+    const i = Math.max(0, w.hourly.time.indexOf(now));
+    return Math.max(0, ...w.hourly.precipitation_probability.slice(i, i + hours).map(v => v ?? 0));
+  }
+
+  async function renderWeather(kind) {
+    const box = $('wx');
+    box.innerHTML = `<div class="wx-loading"><img src="${iconSrc('partly-day')}" alt="">外の天気を確認しています…</div>`;
+    const place = await getPosition();
+    const w = await fetchWeather(place);
+    const c = w.current, d = describe(c.weather_code, c.is_day);
+    const h = new Date().getHours();
+    const isIn = kind === '在席';
+
+    // 在席：帰る頃（18時）と今日の傘 / 退席：今夜（21時）と明日の朝（8時）
+    let slots, pop, wear;
+    if (isIn) {
+      const leave = hourAt(w, 0, Math.max(18, h + 1));
+      slots = [{ label: '帰る頃', hour: Math.max(18, h + 1), v: leave }, { label: '明日の朝', hour: 8, v: hourAt(w, 1, 8) }];
+      pop = maxPop(w, Math.max(1, Math.max(19, h + 2) - h));
+      wear = { title: '今日の服装', text: clothing(c.apparent_temperature) + (leave && c.temperature_2m - leave.temp >= 5 ? '。帰りは冷えるので上着を' : '') };
+    } else {
+      const night = h < 21 ? 21 : Math.min(23, h + 1);
+      const morning = hourAt(w, 1, 8);
+      slots = [{ label: '今夜', hour: night, v: hourAt(w, 0, night) }, { label: '明日の朝', hour: 8, v: morning }];
+      pop = maxPop(w, 3);
+      wear = { title: '明日の朝の服装', text: morning ? clothing(morning.feels) : '—' };
+    }
+    const u = umbrella(pop);
+    const t = new Date();
+
+    box.innerHTML = `
+      <div class="scene ${d.type} ${c.is_day ? 'day' : 'night'}">
+        <div class="top">
+          <span class="place"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>${place.name}</span>
+          ${w.demo ? '<span class="demo">デモデータ</span>' : `<span>${isIn ? '今の外の天気' : '外は今'}</span>`}
+        </div>
+        <div class="main">
+          <div>
+            <div class="temp">${Math.round(c.temperature_2m)}<small>℃</small></div>
+            <div class="cond">${d.label}</div>
+            <div class="meta">体感 ${Math.round(c.apparent_temperature)}℃ ・ 最高 ${Math.round(w.daily.temperature_2m_max[0])}℃ / 最低 ${Math.round(w.daily.temperature_2m_min[0])}℃</div>
+          </div>
+          <img class="icon ${d.icon === 'clear-day' ? 'clear-day' : 'float'}" src="${iconSrc(d.icon)}" alt="${d.label}">
+        </div>
+      </div>
+      <div class="forecast">${slots.map(s => s.v ? `<div>
+          <img src="${iconSrc(s.v.d.icon)}" alt="${s.v.d.label}">
+          <div class="label">${s.label}（${s.hour}時）</div>
+          <div class="val">${s.v.temp}℃ ${s.v.d.label}<span>☂${s.v.pop}%</span></div>
+        </div>` : '<div></div>').join('')}</div>
+      <div class="advice">
+        <div><span class="ico" style="background:${u.bg}">${u.icon}</span><span><b>${isIn ? '帰りまでの傘' : 'これから3時間の傘'}</b>${u.text}</span></div>
+        <div><span class="ico" style="background:#eef7ee">👕</span><span><b>${wear.title}</b>${wear.text}</span></div>
+      </div>
+      <div class="foot">
+        <span>${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')} 時点</span>
+        ${w.demo ? '<span>天気を取得できなかったためデモデータを表示中</span>' : '<a href="https://open-meteo.com/" target="_blank" rel="noopener">天気データ: Open-Meteo.com</a>'}
+      </div>`;
+  }
+
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+    window.scrollTo(0, 0);
+  }
+
+  function register(kind) {
+    const dt = $('datetime').value || nowLocal();
+    $('doneTitle').textContent = `${kind}登録が完了しました`;
+    $('doneSub').textContent = kind === '在席' ? '今日もよろしくお願いします' : 'おつかれさまでした！';
+    $('sumUser').textContent = USER_ID;
+    $('sumTime').textContent = dt.replace('T', ' ').replace(/-/g, '/');
+    $('sumComment').textContent = $('comment').value || '—';
+    show('screen-done');
+    renderWeather(kind);
+  }
+
+  $('btnIn').addEventListener('click', () => register('在席'));
+  $('btnOut').addEventListener('click', () => register('退席'));
+  $('btnBack').addEventListener('click', () => {
+    $('datetime').value = nowLocal();
+    show('screen-form');
+  });
+</script>
+</body>
+</html>
